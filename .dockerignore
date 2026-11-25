@@ -5,3 +5,4 @@ deploy/
 .git/
 *.log
 web/.npmrc
+.netrc

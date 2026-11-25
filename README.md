@@ -150,19 +150,21 @@ capabilities; the namespace enforces the `restricted` Pod Security Standard.
 `deploy/k8s/overlays/prod` is the template for a real cluster: set the
 registry, tags, ingress host and secret source.
 
-The frontend's npm dependencies come from Chainguard Libraries
-(`https://libraries.cgr.dev/javascript/`); `web/package-lock.json` pins their
-Chainguard URLs and hashes. Run `make npmrc` to write `web/.npmrc` with a
-short-lived token before `make images`, `make run-web` or `docker compose
-build`. The web image reads that file as the `npmrc` build secret. After you
-add or upgrade a package, run `chainctl libraries update-hashes` in `web/`.
+Image builds pull dependencies from Chainguard Libraries: npm packages from
+`https://libraries.cgr.dev/javascript/` and Go modules from
+`https://libraries.cgr.dev/go`. `web/package-lock.json` pins the Chainguard
+URLs and hashes; `go.sum` verifies the Go modules. Run `make credentials`
+before `make images`, `make run-web` or `docker compose build`. It writes
+`web/.npmrc` and `.netrc` with short-lived tokens, which the builds read as the
+`npmrc` and `netrc` build secrets. After you add or upgrade an npm package, run
+`chainctl libraries update-hashes` in `web/`.
 
 CI (`.github/workflows/images.yaml`) assumes the `vulnviz-gha` identity in the
 `andrewd.dev` Chainguard organization through GitHub OIDC. That identity holds
-only `libraries.javascript.pull`.
+only `libraries.javascript.pull` and `libraries.go.pull`.
 
-Build arguments `GOPROXY`, `GONOSUMDB` and `GOFLAGS` pass through to the Go
-image builds so CI can point them at a Go module proxy.
+The Go Dockerfiles default `GOPROXY` to Chainguard Libraries and
+`GONOSUMDB` to `*`; override them as build arguments to use another proxy.
 
 ## API
 

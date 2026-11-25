@@ -38,11 +38,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The web image installs npm packages from Chainguard Libraries. Assume the
-      # vulnviz-gha identity (andrewd.dev, role libraries.javascript.pull) and
-      # write a short-lived .npmrc outside the workspace for the build secret.
+      # Builds pull npm packages and Go modules from Chainguard Libraries. Assume
+      # the vulnviz-gha identity (andrewd.dev; roles libraries.javascript.pull
+      # and libraries.go.pull) and write short-lived credentials to runner.temp,
+      # outside the build context, for the build secrets.
       - name: Assume Chainguard identity
-        if: matrix.component == 'web'
         uses: chainguard-dev/setup-chainctl@bfe7503a12660737d9d66d02d2610a399d804316 # v0.6.0
         with:
           identity: 9188682cf9821b6157bb8a00d8376efc4a2933e3/1dbdb9481aaede5b
@@ -51,6 +51,15 @@ jobs:
         if: matrix.component == 'web'
         working-directory: ${{ runner.temp }}
         run: chainctl auth configure-npm
+
+      - name: Write netrc for Chainguard Libraries
+        if: matrix.component != 'web'
+        working-directory: ${{ runner.temp }}
+        run: |
+          token="$(chainctl auth token --audience=libraries.cgr.dev)"
+          echo "::add-mask::${token}"
+          umask 077
+          printf 'machine libraries.cgr.dev\nlogin _token\npassword %s\n' "${token}" > netrc
 
       - id: meta
         uses: chainguard-actions/docker-metadata-action@f00cce7d85a292451bbab8346cddfdfb3a7b0ea4 # v6.2.0
@@ -73,6 +82,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          secret-files: ${{ matrix.component == 'web' && format('npmrc={0}/.npmrc', runner.temp) || '' }}
+          secret-files: ${{ matrix.component == 'web' && format('npmrc={0}/.npmrc', runner.temp) || format('netrc={0}/netrc', runner.temp) }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
