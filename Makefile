@@ -4,7 +4,7 @@ export DATABASE_URL
 TAG ?= dev
 KIND_CLUSTER ?= vulnviz
 
-.PHONY: build test run-api run-web db-up db-down ingest-all ingest-cve ingest-advisories ingest-sync aggregate images kind-up kind-load kind-deploy kind-bootstrap kind-down manifests
+.PHONY: build test run-api run-web db-up db-down ingest-all ingest-cve ingest-advisories ingest-sync aggregate images npmrc netrc credentials kind-up kind-load kind-deploy kind-bootstrap kind-down manifests
 
 build:            ## Build the Go binaries into bin/
 	go build -o bin/api ./cmd/api
@@ -44,10 +44,20 @@ ingest-sync: build
 aggregate: build  ## Rebuild derived tables only
 	./bin/ingest aggregate
 
-images:           ## Build the three container images (tag: $(TAG))
-	docker build -f build/Dockerfile.api     -t vulnviz-api:$(TAG) .
-	docker build -f build/Dockerfile.ingest  -t vulnviz-ingest:$(TAG) .
-	docker build -f build/Dockerfile.web     -t vulnviz-web:$(TAG) .
+credentials: npmrc netrc ## Write Chainguard Libraries credentials for npm and Go (short-lived; re-run when they expire)
+
+npmrc:            ## Write web/.npmrc for npm
+	cd web && chainctl auth configure-npm
+
+netrc:            ## Write .netrc for Go module downloads during image builds
+	@umask 077 && printf 'machine libraries.cgr.dev\nlogin _token\npassword %s\n' \
+	  "$$(chainctl auth token --audience=libraries.cgr.dev)" > .netrc && echo "Wrote .netrc"
+
+images:           ## Build the three container images (tag: $(TAG)); needs `make credentials`
+	@test -f web/.npmrc -a -f .netrc || { echo "credentials are missing: run 'make credentials' first"; exit 1; }
+	docker build -f build/Dockerfile.api     -t vulnviz-api:$(TAG) --secret id=netrc,src=.netrc .
+	docker build -f build/Dockerfile.ingest  -t vulnviz-ingest:$(TAG) --secret id=netrc,src=.netrc .
+	docker build -f build/Dockerfile.web     -t vulnviz-web:$(TAG) --secret id=npmrc,src=web/.npmrc .
 
 deploy/k8s/base/sources.yaml: configs/sources.yaml  ## kustomize can only read files under its own directory
 	cp configs/sources.yaml deploy/k8s/base/sources.yaml

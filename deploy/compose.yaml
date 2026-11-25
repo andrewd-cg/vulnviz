@@ -14,23 +14,27 @@ services:
       interval: 5s
       retries: 20
   api:
-    build: { context: .., dockerfile: build/Dockerfile.api }
+    build: { context: .., dockerfile: build/Dockerfile.api, secrets: [netrc] }
     environment:
       DATABASE_URL: postgres://vulnviz:vulnviz@db:5432/vulnviz?sslmode=disable
     depends_on: { db: { condition: service_healthy } }
     ports: ["8080:8080"]
     networks: { default: { aliases: [vulnviz-api] } }
   web:
-    build: { context: .., dockerfile: build/Dockerfile.web }
+    build: { context: .., dockerfile: build/Dockerfile.web, secrets: [npmrc] }
     depends_on: [api]
     ports: ["8000:8080"]
   ingest:
-    build: { context: .., dockerfile: build/Dockerfile.ingest }
+    build: { context: .., dockerfile: build/Dockerfile.ingest, secrets: [netrc] }
     environment:
       DATABASE_URL: postgres://vulnviz:vulnviz@db:5432/vulnviz?sslmode=disable
     volumes: [scratch:/scratch]
     depends_on: { db: { condition: service_healthy } }
     profiles: [jobs]
+# Chainguard Libraries credentials; create both files with `make credentials`.
+secrets:
+  npmrc: { file: ../web/.npmrc }
+  netrc: { file: ../.netrc }
 volumes:
   pgdata: {}
   scratch: {}

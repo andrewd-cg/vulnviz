@@ -7,7 +7,14 @@ FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 ARG NPM_CONFIG_REGISTRY
 COPY --chown=node:node web/package.json web/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# The lockfile resolves packages from Chainguard Libraries. Pass an .npmrc with
+# credentials for libraries.cgr.dev as the "npmrc" build secret; CI writes it
+# with `chainctl auth configure-npm`. The secret never lands in an image layer.
+# npm 12 defaults to allow-remote=none and treats tarballs outside the registry
+# path as remote. Chainguard serves upstream-fallback packages from
+# /javascript-upstream/, outside the /javascript/ registry path, so allow them.
+RUN --mount=type=secret,id=npmrc,mode=0444,required=true \
+    NPM_CONFIG_USERCONFIG=/run/secrets/npmrc npm ci --no-audit --no-fund --allow-remote=all
 COPY --chown=node:node web/ ./
 RUN npm run build
 

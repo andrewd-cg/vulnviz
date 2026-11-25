@@ -1,0 +1,87 @@
+# Builds the api, ingest and web images and pushes them to GHCR as
+# ghcr.io/<owner>/vulnviz-<component>. Pull requests build without pushing.
+name: images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # GitHub OIDC token for the Chainguard assumable identity
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [api, ingest, web]
+    steps:
+      - uses: chainguard-actions/actions-checkout@37298d8de412b35988dd165ffae45f45b329d365 # v7.0.1
+
+      - uses: chainguard-actions/docker-setup-qemu-action@93beaf39dafe3662779d77874be5e60f4b7250c1 # v4.4.0
+
+      - uses: chainguard-actions/docker-setup-buildx-action@9744db81e7643f97efc7d98e7ce3d11d197f3093 # v4.4.1
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: chainguard-actions/docker-login-action@e866ef65062739486ea6d830a9cd5957df29abea # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Builds pull npm packages and Go modules from Chainguard Libraries. Assume
+      # the vulnviz-gha identity (andrewd.dev; roles libraries.javascript.pull
+      # and libraries.go.pull) and write short-lived credentials to runner.temp,
+      # outside the build context, for the build secrets.
+      - name: Assume Chainguard identity
+        uses: chainguard-dev/setup-chainctl@bfe7503a12660737d9d66d02d2610a399d804316 # v0.6.0
+        with:
+          identity: 9188682cf9821b6157bb8a00d8376efc4a2933e3/1dbdb9481aaede5b
+
+      - name: Write .npmrc for Chainguard Libraries
+        if: matrix.component == 'web'
+        working-directory: ${{ runner.temp }}
+        run: chainctl auth configure-npm
+
+      - name: Write netrc for Chainguard Libraries
+        if: matrix.component != 'web'
+        working-directory: ${{ runner.temp }}
+        run: |
+          token="$(chainctl auth token --audience=libraries.cgr.dev)"
+          echo "::add-mask::${token}"
+          umask 077
+          printf 'machine libraries.cgr.dev\nlogin _token\npassword %s\n' "${token}" > netrc
+
+      - id: meta
+        uses: chainguard-actions/docker-metadata-action@f00cce7d85a292451bbab8346cddfdfb3a7b0ea4 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/vulnviz-${{ matrix.component }}
+          # main -> :main and :sha-<short>; v1.2.3 -> :v1.2.3, :v1.2 and :latest
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - uses: chainguard-actions/docker-build-push-action@7a9792a1d0d1c43df643ef18b1f3a4a495833b23 # v7.4.0
+        with:
+          context: .
+          file: build/Dockerfile.${{ matrix.component }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          secret-files: ${{ matrix.component == 'web' && format('npmrc={0}/.npmrc', runner.temp) || format('netrc={0}/netrc', runner.temp) }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
