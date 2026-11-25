@@ -21,7 +21,7 @@ services:
     ports: ["8080:8080"]
     networks: { default: { aliases: [vulnviz-api] } }
   web:
-    build: { context: .., dockerfile: build/Dockerfile.web }
+    build: { context: .., dockerfile: build/Dockerfile.web, secrets: [npmrc] }
     depends_on: [api]
     ports: ["8000:8080"]
   ingest:
@@ -31,6 +31,9 @@ services:
     volumes: [scratch:/scratch]
     depends_on: { db: { condition: service_healthy } }
     profiles: [jobs]
+# web/.npmrc holds Chainguard Libraries credentials; create it with `make npmrc`.
+secrets:
+  npmrc: { file: ../web/.npmrc }
 volumes:
   pgdata: {}
   scratch: {}

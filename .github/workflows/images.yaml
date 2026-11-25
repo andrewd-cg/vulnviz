@@ -18,6 +18,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write # GitHub OIDC token for the Chainguard assumable identity
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +37,20 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The web image installs npm packages from Chainguard Libraries. Assume the
+      # vulnviz-gha identity (andrewd.dev, role libraries.javascript.pull) and
+      # write a short-lived .npmrc outside the workspace for the build secret.
+      - name: Assume Chainguard identity
+        if: matrix.component == 'web'
+        uses: chainguard-dev/setup-chainctl@bfe7503a12660737d9d66d02d2610a399d804316 # v0.6.0
+        with:
+          identity: 9188682cf9821b6157bb8a00d8376efc4a2933e3/1dbdb9481aaede5b
+
+      - name: Write .npmrc for Chainguard Libraries
+        if: matrix.component == 'web'
+        working-directory: ${{ runner.temp }}
+        run: chainctl auth configure-npm
 
       - id: meta
         uses: chainguard-actions/docker-metadata-action@f00cce7d85a292451bbab8346cddfdfb3a7b0ea4 # v6.2.0
@@ -58,5 +73,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          secret-files: ${{ matrix.component == 'web' && format('npmrc={0}/.npmrc', runner.temp) || '' }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}

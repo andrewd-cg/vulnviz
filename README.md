@@ -150,9 +150,19 @@ capabilities; the namespace enforces the `restricted` Pod Security Standard.
 `deploy/k8s/overlays/prod` is the template for a real cluster: set the
 registry, tags, ingress host and secret source.
 
-Build arguments `GOPROXY`, `GONOSUMDB`, `GOFLAGS` and `NPM_CONFIG_REGISTRY` pass
-through to the image builds so CI can point them at Chainguard Libraries or a
-corporate proxy.
+The frontend's npm dependencies come from Chainguard Libraries
+(`https://libraries.cgr.dev/javascript/`); `web/package-lock.json` pins their
+Chainguard URLs and hashes. Run `make npmrc` to write `web/.npmrc` with a
+short-lived token before `make images`, `make run-web` or `docker compose
+build`. The web image reads that file as the `npmrc` build secret. After you
+add or upgrade a package, run `chainctl libraries update-hashes` in `web/`.
+
+CI (`.github/workflows/images.yaml`) assumes the `vulnviz-gha` identity in the
+`andrewd.dev` Chainguard organization through GitHub OIDC. That identity holds
+only `libraries.javascript.pull`.
+
+Build arguments `GOPROXY`, `GONOSUMDB` and `GOFLAGS` pass through to the Go
+image builds so CI can point them at a Go module proxy.
 
 ## API
 

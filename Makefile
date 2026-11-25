@@ -4,7 +4,7 @@ export DATABASE_URL
 TAG ?= dev
 KIND_CLUSTER ?= vulnviz
 
-.PHONY: build test run-api run-web db-up db-down ingest-all ingest-cve ingest-advisories ingest-sync aggregate images kind-up kind-load kind-deploy kind-bootstrap kind-down manifests
+.PHONY: build test run-api run-web db-up db-down ingest-all ingest-cve ingest-advisories ingest-sync aggregate images npmrc kind-up kind-load kind-deploy kind-bootstrap kind-down manifests
 
 build:            ## Build the Go binaries into bin/
 	go build -o bin/api ./cmd/api
@@ -44,10 +44,14 @@ ingest-sync: build
 aggregate: build  ## Rebuild derived tables only
 	./bin/ingest aggregate
 
-images:           ## Build the three container images (tag: $(TAG))
+npmrc:            ## Write web/.npmrc with Chainguard Libraries credentials (short-lived; re-run when it expires)
+	cd web && chainctl auth configure-npm
+
+images:           ## Build the three container images (tag: $(TAG)); the web image needs web/.npmrc
+	@test -f web/.npmrc || { echo "web/.npmrc is missing: run 'make npmrc' first"; exit 1; }
 	docker build -f build/Dockerfile.api     -t vulnviz-api:$(TAG) .
 	docker build -f build/Dockerfile.ingest  -t vulnviz-ingest:$(TAG) .
-	docker build -f build/Dockerfile.web     -t vulnviz-web:$(TAG) .
+	docker build -f build/Dockerfile.web     -t vulnviz-web:$(TAG) --secret id=npmrc,src=web/.npmrc .
 
 deploy/k8s/base/sources.yaml: configs/sources.yaml  ## kustomize can only read files under its own directory
 	cp configs/sources.yaml deploy/k8s/base/sources.yaml
